@@ -1,8 +1,9 @@
 import { useState, useCallback, useMemo } from 'react';
-import { Transaction, MonthlySummary } from '@/types/finance';
+import { Transaction, MonthlySummary, MonthlyClosing } from '@/types/finance';
 
 const STORAGE_KEY = 'finapp_transactions';
 const SAVINGS_KEY = 'finapp_savings';
+const CLOSINGS_KEY = 'finapp_closings';
 
 function loadTransactions(): Transaction[] {
   try {
@@ -21,6 +22,16 @@ export function useTransactions() {
     const s = localStorage.getItem(SAVINGS_KEY);
     return s ? parseFloat(s) : 0;
   });
+  const [closings, setClosings] = useState<MonthlyClosing[]>(() => {
+    try {
+      const data = localStorage.getItem(CLOSINGS_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch { return []; }
+  });
+
+  const saveClosings = useCallback((c: MonthlyClosing[]) => {
+    localStorage.setItem(CLOSINGS_KEY, JSON.stringify(c));
+  }, []);
 
   const addTransaction = useCallback((tx: Omit<Transaction, 'id' | 'createdAt'>) => {
     const newTx: Transaction = {
@@ -60,6 +71,37 @@ export function useTransactions() {
     setSavedAmount(amount);
     localStorage.setItem(SAVINGS_KEY, amount.toString());
   }, []);
+
+  const closeMonth = useCallback((month: string) => {
+    const monthTxs = transactions.filter(t => t.date.startsWith(month));
+    const income = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const expenses = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    const balance = income - expenses;
+
+    const closing: MonthlyClosing = {
+      month,
+      income,
+      expenses,
+      balance,
+      closedAt: new Date().toISOString(),
+    };
+
+    setClosings(prev => {
+      const updated = [...prev.filter(c => c.month !== month), closing].sort((a, b) => a.month.localeCompare(b.month));
+      saveClosings(updated);
+      return updated;
+    });
+
+    // Update saved amount
+    const newSaved = savedAmount + balance;
+    updateSavedAmount(newSaved);
+
+    return closing;
+  }, [transactions, savedAmount, updateSavedAmount, saveClosings]);
+
+  const isMonthClosed = useCallback((month: string) => {
+    return closings.some(c => c.month === month);
+  }, [closings]);
 
   const currentMonth = new Date().toISOString().slice(0, 7);
 
@@ -108,6 +150,70 @@ export function useTransactions() {
       .sort((a, b) => b.amount - a.amount);
   }, [currentMonthTransactions]);
 
+  // Recurring projections: future months where recurring expenses still apply
+  const recurringProjections = useMemo(() => {
+    const recurring = transactions.filter(t => t.recurrence === 'recurring' && t.type === 'expense');
+    const projections: { description: string; amount: number; category: string; endDate?: string; monthsRemaining: number }[] = [];
+
+    recurring.forEach(tx => {
+      if (tx.recurrenceEndDate) {
+        const now = new Date();
+        const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        if (tx.recurrenceEndDate >= currentYM) {
+          const [endY, endM] = tx.recurrenceEndDate.split('-').map(Number);
+          const monthsRemaining = (endY - now.getFullYear()) * 12 + (endM - now.getMonth() - 1);
+          projections.push({
+            description: tx.description,
+            amount: tx.amount,
+            category: tx.category,
+            endDate: tx.recurrenceEndDate,
+            monthsRemaining: Math.max(0, monthsRemaining),
+          });
+        }
+      } else {
+        projections.push({
+          description: tx.description,
+          amount: tx.amount,
+          category: tx.category,
+          monthsRemaining: -1, // indefinite
+        });
+      }
+    });
+    return projections;
+  }, [transactions]);
+
+  // Annual consolidation
+  const annualData = useMemo(() => {
+    const year = new Date().getFullYear().toString();
+    const yearTxs = transactions.filter(t => t.date.startsWith(year));
+    const totalIncome = yearTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const totalExpenses = yearTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+
+    const monthlyBreakdown: { month: string; income: number; expenses: number; balance: number; closed: boolean }[] = [];
+    for (let m = 0; m < 12; m++) {
+      const monthStr = `${year}-${String(m + 1).padStart(2, '0')}`;
+      const mTxs = yearTxs.filter(t => t.date.startsWith(monthStr));
+      const inc = mTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+      const exp = mTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+      monthlyBreakdown.push({
+        month: monthStr,
+        income: inc,
+        expenses: exp,
+        balance: inc - exp,
+        closed: closings.some(c => c.month === monthStr),
+      });
+    }
+
+    return {
+      year,
+      totalIncome,
+      totalExpenses,
+      totalBalance: totalIncome - totalExpenses,
+      monthlyBreakdown,
+      closedMonths: closings.filter(c => c.month.startsWith(year)),
+    };
+  }, [transactions, closings]);
+
   return {
     transactions,
     addTransaction,
@@ -121,5 +227,10 @@ export function useTransactions() {
     currentMonthExpenses,
     expensesByCategory,
     currentMonth,
+    closings,
+    closeMonth,
+    isMonthClosed,
+    recurringProjections,
+    annualData,
   };
 }

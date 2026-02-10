@@ -8,6 +8,9 @@ import SavingsChart from '@/components/SavingsChart';
 import ExpenseBreakdown from '@/components/ExpenseBreakdown';
 import ImportDialog from '@/components/ImportDialog';
 import SavingsGoal from '@/components/SavingsGoal';
+import MonthlyClosing from '@/components/MonthlyClosing';
+import RecurringProjections from '@/components/RecurringProjections';
+import AnnualConsolidator from '@/components/AnnualConsolidator';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,6 +27,8 @@ const Dashboard = () => {
     savedAmount, updateSavedAmount,
     monthlyData, currentMonthTransactions,
     currentMonthIncome, currentMonthExpenses, expensesByCategory,
+    currentMonth, closeMonth, isMonthClosed,
+    recurringProjections, annualData,
   } = useTransactions();
 
   const balance = currentMonthIncome - currentMonthExpenses;
@@ -89,8 +94,17 @@ const Dashboard = () => {
           />
         </div>
 
-        {/* Savings Goal */}
-        <SavingsGoal savedAmount={savedAmount} onUpdate={updateSavedAmount} />
+        {/* Savings Goal + Monthly Closing */}
+        <div className="grid md:grid-cols-2 gap-4">
+          <SavingsGoal savedAmount={savedAmount} onUpdate={updateSavedAmount} />
+          <MonthlyClosing
+            currentMonth={currentMonth}
+            currentMonthIncome={currentMonthIncome}
+            currentMonthExpenses={currentMonthExpenses}
+            isClosed={isMonthClosed(currentMonth)}
+            onClose={closeMonth}
+          />
+        </div>
 
         {/* Charts */}
         <div className="grid md:grid-cols-2 gap-4">
@@ -112,6 +126,9 @@ const Dashboard = () => {
           </Card>
         </div>
 
+        {/* Recurring Projections */}
+        <RecurringProjections projections={recurringProjections} />
+
         {/* Transactions */}
         <Card>
           <CardHeader className="pb-2">
@@ -126,6 +143,9 @@ const Dashboard = () => {
             <TransactionList transactions={currentMonthTransactions} onDelete={deleteTransaction} />
           </CardContent>
         </Card>
+
+        {/* Annual Consolidator */}
+        <AnnualConsolidator data={annualData} />
       </main>
     </div>
   );
