@@ -32,6 +32,7 @@ interface TransactionFormProps {
     category: ExpenseCategory | IncomeCategory;
     date: string;
     recurrence: RecurrenceType;
+    recurrenceEndDate?: string;
   }) => void;
 }
 
@@ -43,6 +44,7 @@ const TransactionForm = ({ onAdd }: TransactionFormProps) => {
   const [category, setCategory] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [recurrence, setRecurrence] = useState<RecurrenceType>('one-time');
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
 
   const categories = type === 'expense' ? expenseCategories : incomeCategories;
 
@@ -52,6 +54,7 @@ const TransactionForm = ({ onAdd }: TransactionFormProps) => {
     setCategory('');
     setDate(new Date().toISOString().slice(0, 10));
     setRecurrence('one-time');
+    setRecurrenceEndDate('');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -64,6 +67,7 @@ const TransactionForm = ({ onAdd }: TransactionFormProps) => {
       category: category as ExpenseCategory | IncomeCategory,
       date,
       recurrence,
+      ...(recurrence === 'recurring' && recurrenceEndDate ? { recurrenceEndDate } : {}),
     });
     reset();
     setOpen(false);
@@ -140,6 +144,19 @@ const TransactionForm = ({ onAdd }: TransactionFormProps) => {
               </SelectContent>
             </Select>
           </div>
+
+          {recurrence === 'recurring' && (
+            <div className="space-y-2">
+              <Label>Até quando? (mês/ano)</Label>
+              <Input
+                type="month"
+                value={recurrenceEndDate}
+                onChange={e => setRecurrenceEndDate(e.target.value)}
+                placeholder="Opcional"
+              />
+              <p className="text-xs text-muted-foreground">Deixe vazio para recorrência sem fim</p>
+            </div>
+          )}
 
           <Button type="submit" className="w-full font-semibold">
             Adicionar {type === 'expense' ? 'Despesa' : 'Receita'}

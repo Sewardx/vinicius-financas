@@ -14,6 +14,7 @@ export interface Transaction {
   category: ExpenseCategory | IncomeCategory;
   date: string; // ISO string
   recurrence: RecurrenceType;
+  recurrenceEndDate?: string; // YYYY-MM for recurring expenses end date
   createdAt: string;
 }
 
@@ -22,6 +23,14 @@ export interface MonthlySummary {
   totalIncome: number;
   totalExpenses: number;
   savings: number;
+}
+
+export interface MonthlyClosing {
+  month: string; // YYYY-MM
+  income: number;
+  expenses: number;
+  balance: number;
+  closedAt: string;
 }
 
 export interface InvestmentTip {
