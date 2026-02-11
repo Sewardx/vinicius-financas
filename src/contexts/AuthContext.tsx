@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User } from '@supabase/supabase-js';
 
@@ -22,38 +22,72 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<{ username: string; id: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  const isMounted = useRef(true);
 
-  const mapUser = useCallback(async (supaUser: User | null) => {
-    if (!supaUser) {
-      setUser(null);
-      return;
-    }
-    // Fetch profile
+  const fetchProfile = useCallback(async (supaUser: User) => {
     const { data: profile } = await supabase
       .from('profiles')
       .select('username')
       .eq('user_id', supaUser.id)
       .maybeSingle();
 
-    setUser({
+    return {
       id: supaUser.id,
       username: profile?.username || supaUser.email?.split('@')[0] || 'Usuário',
-    });
+    };
   }, []);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      await mapUser(session?.user ?? null);
-      setLoading(false);
-    });
+    isMounted.current = true;
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      await mapUser(session?.user ?? null);
-      setLoading(false);
-    });
+    // Listener for ONGOING auth changes (does NOT control loading)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (!isMounted.current) return;
 
-    return () => subscription.unsubscribe();
-  }, [mapUser]);
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+          return;
+        }
+
+        if (session?.user) {
+          // Use setTimeout to avoid Supabase deadlock
+          setTimeout(async () => {
+            if (!isMounted.current) return;
+            const mapped = await fetchProfile(session.user);
+            if (isMounted.current) setUser(mapped);
+          }, 0);
+        }
+      }
+    );
+
+    // INITIAL load (controls loading state)
+    const initializeAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!isMounted.current) return;
+
+        if (session?.user) {
+          const mapped = await fetchProfile(session.user);
+          if (isMounted.current) setUser(mapped);
+        } else {
+          setUser(null);
+        }
+      } catch (err) {
+        console.error('Auth initialization error:', err);
+        if (isMounted.current) setUser(null);
+      } finally {
+        if (isMounted.current) setLoading(false);
+      }
+    };
+
+    initializeAuth();
+
+    return () => {
+      isMounted.current = false;
+      subscription.unsubscribe();
+    };
+  }, [fetchProfile]);
 
   const login = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -75,8 +109,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback(async () => {
-    await supabase.auth.signOut();
     setUser(null);
+    await supabase.auth.signOut();
   }, []);
 
   return (
