@@ -14,7 +14,117 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      monthly_closings: {
+        Row: {
+          balance: number
+          closed_at: string
+          expenses: number
+          id: string
+          income: number
+          month: string
+          user_id: string
+        }
+        Insert: {
+          balance?: number
+          closed_at?: string
+          expenses?: number
+          id?: string
+          income?: number
+          month: string
+          user_id: string
+        }
+        Update: {
+          balance?: number
+          closed_at?: string
+          expenses?: number
+          id?: string
+          income?: number
+          month?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          id: string
+          user_id: string
+          username: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          user_id: string
+          username?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          user_id?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
+      transactions: {
+        Row: {
+          amount: number
+          category: string
+          created_at: string
+          date: string
+          description: string
+          id: string
+          recurrence: string
+          recurrence_end_date: string | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          category: string
+          created_at?: string
+          date: string
+          description: string
+          id?: string
+          recurrence?: string
+          recurrence_end_date?: string | null
+          type: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          category?: string
+          created_at?: string
+          date?: string
+          description?: string
+          id?: string
+          recurrence?: string
+          recurrence_end_date?: string | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_savings: {
+        Row: {
+          id: string
+          saved_amount: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          saved_amount?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          saved_amount?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

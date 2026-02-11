@@ -1,78 +1,165 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Transaction, MonthlySummary, MonthlyClosing } from '@/types/finance';
-
-const STORAGE_KEY = 'finapp_transactions';
-const SAVINGS_KEY = 'finapp_savings';
-const CLOSINGS_KEY = 'finapp_closings';
-
-function loadTransactions(): Transaction[] {
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch { return []; }
-}
-
-function saveTransactions(txs: Transaction[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(txs));
-}
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 export function useTransactions() {
-  const [transactions, setTransactions] = useState<Transaction[]>(loadTransactions);
-  const [savedAmount, setSavedAmount] = useState<number>(() => {
-    const s = localStorage.getItem(SAVINGS_KEY);
-    return s ? parseFloat(s) : 0;
-  });
-  const [closings, setClosings] = useState<MonthlyClosing[]>(() => {
-    try {
-      const data = localStorage.getItem(CLOSINGS_KEY);
-      return data ? JSON.parse(data) : [];
-    } catch { return []; }
-  });
+  const { user } = useAuth();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [savedAmount, setSavedAmount] = useState<number>(0);
+  const [closings, setClosings] = useState<MonthlyClosing[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const saveClosings = useCallback((c: MonthlyClosing[]) => {
-    localStorage.setItem(CLOSINGS_KEY, JSON.stringify(c));
-  }, []);
+  // Load data from database
+  useEffect(() => {
+    if (!user) return;
 
-  const addTransaction = useCallback((tx: Omit<Transaction, 'id' | 'createdAt'>) => {
-    const newTx: Transaction = {
-      ...tx,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
+    const loadData = async () => {
+      setLoading(true);
+
+      // Load transactions
+      const { data: txData } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (txData) {
+        setTransactions(txData.map(t => ({
+          id: t.id,
+          type: t.type as Transaction['type'],
+          description: t.description,
+          amount: Number(t.amount),
+          category: t.category as Transaction['category'],
+          date: t.date,
+          recurrence: t.recurrence as Transaction['recurrence'],
+          recurrenceEndDate: t.recurrence_end_date || undefined,
+          createdAt: t.created_at,
+        })));
+      }
+
+      // Load closings
+      const { data: closingData } = await supabase
+        .from('monthly_closings')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('month', { ascending: true });
+
+      if (closingData) {
+        setClosings(closingData.map(c => ({
+          month: c.month,
+          income: Number(c.income),
+          expenses: Number(c.expenses),
+          balance: Number(c.balance),
+          closedAt: c.closed_at,
+        })));
+      }
+
+      // Load savings
+      const { data: savingsData } = await supabase
+        .from('user_savings')
+        .select('saved_amount')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (savingsData) {
+        setSavedAmount(Number(savingsData.saved_amount));
+      }
+
+      setLoading(false);
     };
-    setTransactions(prev => {
-      const updated = [newTx, ...prev];
-      saveTransactions(updated);
-      return updated;
-    });
-  }, []);
 
-  const deleteTransaction = useCallback((id: string) => {
-    setTransactions(prev => {
-      const updated = prev.filter(t => t.id !== id);
-      saveTransactions(updated);
-      return updated;
-    });
-  }, []);
+    loadData();
+  }, [user]);
 
-  const importTransactions = useCallback((txs: Omit<Transaction, 'id' | 'createdAt'>[]) => {
-    const newTxs = txs.map(tx => ({
-      ...tx,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
+  const addTransaction = useCallback(async (tx: Omit<Transaction, 'id' | 'createdAt'>) => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert({
+        user_id: user.id,
+        type: tx.type,
+        description: tx.description,
+        amount: tx.amount,
+        category: tx.category,
+        date: tx.date,
+        recurrence: tx.recurrence,
+        recurrence_end_date: tx.recurrenceEndDate || null,
+      })
+      .select()
+      .single();
+
+    if (data && !error) {
+      const newTx: Transaction = {
+        id: data.id,
+        type: data.type as Transaction['type'],
+        description: data.description,
+        amount: Number(data.amount),
+        category: data.category as Transaction['category'],
+        date: data.date,
+        recurrence: data.recurrence as Transaction['recurrence'],
+        recurrenceEndDate: data.recurrence_end_date || undefined,
+        createdAt: data.created_at,
+      };
+      setTransactions(prev => [newTx, ...prev]);
+    }
+  }, [user]);
+
+  const deleteTransaction = useCallback(async (id: string) => {
+    if (!user) return;
+    await supabase.from('transactions').delete().eq('id', id).eq('user_id', user.id);
+    setTransactions(prev => prev.filter(t => t.id !== id));
+  }, [user]);
+
+  const importTransactions = useCallback(async (txs: Omit<Transaction, 'id' | 'createdAt'>[]) => {
+    if (!user) return;
+
+    const rows = txs.map(tx => ({
+      user_id: user.id,
+      type: tx.type,
+      description: tx.description,
+      amount: tx.amount,
+      category: tx.category,
+      date: tx.date,
+      recurrence: tx.recurrence,
+      recurrence_end_date: tx.recurrenceEndDate || null,
     }));
-    setTransactions(prev => {
-      const updated = [...newTxs, ...prev];
-      saveTransactions(updated);
-      return updated;
-    });
-  }, []);
 
-  const updateSavedAmount = useCallback((amount: number) => {
+    const { data } = await supabase.from('transactions').insert(rows).select();
+
+    if (data) {
+      const newTxs: Transaction[] = data.map(d => ({
+        id: d.id,
+        type: d.type as Transaction['type'],
+        description: d.description,
+        amount: Number(d.amount),
+        category: d.category as Transaction['category'],
+        date: d.date,
+        recurrence: d.recurrence as Transaction['recurrence'],
+        recurrenceEndDate: d.recurrence_end_date || undefined,
+        createdAt: d.created_at,
+      }));
+      setTransactions(prev => [...newTxs, ...prev]);
+    }
+  }, [user]);
+
+  const updateSavedAmount = useCallback(async (amount: number) => {
+    if (!user) return;
     setSavedAmount(amount);
-    localStorage.setItem(SAVINGS_KEY, amount.toString());
-  }, []);
 
-  const closeMonth = useCallback((month: string) => {
+    await supabase
+      .from('user_savings')
+      .upsert({
+        user_id: user.id,
+        saved_amount: amount,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' });
+  }, [user]);
+
+  const closeMonth = useCallback(async (month: string) => {
+    if (!user) return;
+
     const monthTxs = transactions.filter(t => t.date.startsWith(month));
     const income = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
     const expenses = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
@@ -86,18 +173,26 @@ export function useTransactions() {
       closedAt: new Date().toISOString(),
     };
 
+    await supabase
+      .from('monthly_closings')
+      .upsert({
+        user_id: user.id,
+        month,
+        income,
+        expenses,
+        balance,
+        closed_at: closing.closedAt,
+      }, { onConflict: 'user_id,month' });
+
     setClosings(prev => {
-      const updated = [...prev.filter(c => c.month !== month), closing].sort((a, b) => a.month.localeCompare(b.month));
-      saveClosings(updated);
-      return updated;
+      return [...prev.filter(c => c.month !== month), closing].sort((a, b) => a.month.localeCompare(b.month));
     });
 
-    // Update saved amount
     const newSaved = savedAmount + balance;
-    updateSavedAmount(newSaved);
+    await updateSavedAmount(newSaved);
 
     return closing;
-  }, [transactions, savedAmount, updateSavedAmount, saveClosings]);
+  }, [user, transactions, savedAmount, updateSavedAmount]);
 
   const isMonthClosed = useCallback((month: string) => {
     return closings.some(c => c.month === month);
@@ -150,7 +245,6 @@ export function useTransactions() {
       .sort((a, b) => b.amount - a.amount);
   }, [currentMonthTransactions]);
 
-  // Recurring projections: future months where recurring expenses still apply
   const recurringProjections = useMemo(() => {
     const recurring = transactions.filter(t => t.recurrence === 'recurring' && t.type === 'expense');
     const projections: { description: string; amount: number; category: string; endDate?: string; monthsRemaining: number }[] = [];
@@ -175,14 +269,13 @@ export function useTransactions() {
           description: tx.description,
           amount: tx.amount,
           category: tx.category,
-          monthsRemaining: -1, // indefinite
+          monthsRemaining: -1,
         });
       }
     });
     return projections;
   }, [transactions]);
 
-  // Annual consolidation
   const annualData = useMemo(() => {
     const year = new Date().getFullYear().toString();
     const yearTxs = transactions.filter(t => t.date.startsWith(year));
@@ -232,5 +325,6 @@ export function useTransactions() {
     isMonthClosed,
     recurringProjections,
     annualData,
+    loading,
   };
 }

@@ -5,23 +5,41 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { TrendingUp, Lock, User } from 'lucide-react';
+import { TrendingUp, Lock, User, Mail } from 'lucide-react';
 
 const Login = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const [isSignup, setIsSignup] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const { login, signup } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (login(username, password)) {
-      navigate('/');
+    setSuccessMsg('');
+    setSubmitting(true);
+
+    if (isSignup) {
+      const result = await signup(email, password, username);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setSuccessMsg('Conta criada! Verifique seu e-mail para confirmar.');
+      }
     } else {
-      setError('Usuário ou senha incorretos');
+      const result = await login(email, password);
+      if (result.error) {
+        setError('E-mail ou senha incorretos');
+      } else {
+        navigate('/');
+      }
     }
+    setSubmitting(false);
   };
 
   return (
@@ -37,19 +55,38 @@ const Login = () => {
 
         <Card className="border-border/50 shadow-xl">
           <CardHeader className="pb-4">
-            <h2 className="text-xl font-semibold font-display text-center">Entrar</h2>
+            <h2 className="text-xl font-semibold font-display text-center">
+              {isSignup ? 'Criar Conta' : 'Entrar'}
+            </h2>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {isSignup && (
+                <div className="space-y-2">
+                  <Label htmlFor="username">Nome de Usuário</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="username"
+                      value={username}
+                      onChange={e => setUsername(e.target.value)}
+                      placeholder="Seu nome"
+                      className="pl-10"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
-                <Label htmlFor="username">Usuário</Label>
+                <Label htmlFor="email">E-mail</Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
-                    id="username"
-                    value={username}
-                    onChange={e => setUsername(e.target.value)}
-                    placeholder="Digite seu usuário"
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="seu@email.com"
                     className="pl-10"
                     required
                   />
@@ -64,8 +101,9 @@ const Login = () => {
                     type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="Digite sua senha"
+                    placeholder="Sua senha"
                     className="pl-10"
+                    minLength={6}
                     required
                   />
                 </div>
@@ -73,8 +111,19 @@ const Login = () => {
               {error && (
                 <p className="text-sm text-destructive text-center animate-fade-in">{error}</p>
               )}
-              <Button type="submit" className="w-full font-semibold">
-                Acessar
+              {successMsg && (
+                <p className="text-sm text-primary text-center animate-fade-in">{successMsg}</p>
+              )}
+              <Button type="submit" className="w-full font-semibold" disabled={submitting}>
+                {submitting ? 'Aguarde...' : isSignup ? 'Criar Conta' : 'Acessar'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full text-sm"
+                onClick={() => { setIsSignup(!isSignup); setError(''); setSuccessMsg(''); }}
+              >
+                {isSignup ? 'Já tem conta? Entrar' : 'Não tem conta? Criar'}
               </Button>
             </form>
           </CardContent>
